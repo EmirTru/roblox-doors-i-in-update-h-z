@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doors Sızıntıları - Serverless AI Tracker</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, sans-serif; }
+        body { background-color: #121212; color: #e0e0e0; padding: 20px; }
+        header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #1f1f1f; }
+        header h1 { color: #ff4a4a; font-size: 26pt; margin-bottom: 5px; }
+        header p { color: #888; font-size: 11pt; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .card { background-color: #1e1e1e; border-left: 5px solid #ff4a4a; padding: 20px; margin-bottom: 20px; border-radius: 6px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .asset-name { font-size: 15pt; font-weight: bold; color: #fff; }
+        .asset-type { background-color: #2a2a2a; padding: 5px 10px; border-radius: 4px; font-size: 9pt; color: #aaa; text-transform: uppercase; }
+        .asset-location { margin-bottom: 12px; font-size: 10pt; color: #888; }
+        .ai-analysis { background-color: #151515; padding: 15px; border-radius: 6px; border: 1px solid #2a2a2a; line-height: 1.6; color: #dcdcdc; }
+        .date { font-size: 10pt; color: #666; text-align: right; margin-top: 12px; font-weight: bold; }
+        .no-data { text-align: center; color: #666; margin-top: 20px; font-style: italic; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>👁️ Doors AI Asset Hunter</h1>
+            <p>Doğrudan Firebase ve Gemini 3.5 Flash Bağlantılı Anlık Takip Paneli</p>
+        </header>
+
+        <div id="leak-container">
+            <p class="no-data">Veritabanına bağlanılıyor...</p>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+    <script>
+        // ⚠️ KENDİ GÜNCEL GÜVENLİ ANAHTARLARINI BURAYA YAZ
+        const GEMINI_API_KEY = "YENI_ALACAGIN_GEMINI_API_KEY";
+        
+        const firebaseConfig = {
+            apiKey: "YENI_ALACAGIN_FIREBASE_API_KEY",
+            authDomain: "PROJENIN_ADI.firebaseapp.com",
+            databaseURL: "https://PROJENIN_ADI-default-rtdb.firebaseio.com",
+            projectId: "PROJENIN_ADI",
+            storageBucket: "PROJENIN_ADI.appspot.com",
+            messagingSenderId: "SENDER_ID",
+            appId: "APP_ID"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+        const assetRef = database.ref('doors_assets');
+
+        // Gemini 3.5 Flash ile Analiz Yapıp Firebase'e Geri Yazan Fonksiyon
+        async function askGemini(assetId, assetData) {
+            const prompt = `Roblox Doors oyununa yeni bir asset eklenmiş. Adı: ${assetData.name}, Türü: ${assetData.type}, Konumu: ${assetData.parent}. Bu bilgilere göre bu assetin oyuna nasıl bir yenilik getireceğini tahmin et ve heyecan verici Türkçe kısa bir sızıntı notu yaz.`;
+
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                });
+                const resData = await response.json();
+                const aiText = resData.candidates[0].content.parts[0].text;
+                
+                // Analizi Firebase'e kaydet ki her seferinde tekrar sormasın
+                database.ref('doors_assets/' + assetId).update({ ai_summary: aiText });
+            } catch (error) {
+                console.error("Gemini Hatası:", error);
+            }
+        }
+        
+        // Veritabanını Anlık Dinleme
+        assetRef.on('value', (snapshot) => {
+            const container = document.getElementById('leak-container');
+            container.innerHTML = ""; 
+            
+            const data = snapshot.val();
+            if (!data) {
+                container.innerHTML = '<p class="no-data">Henüz veri yok. Delta ile oyunda scripti çalıştırın! 🎮</p>';
+                return;
+            }
+
+            for (let id in data) {
+                const asset = data[id];
+                
+                // Eğer bu asset yeni gelmişse ve AI yorumu yoksa tetikle
+                if (!asset.ai_summary) {
+                    askGemini(id, asset);
+                }
+
+                let displayDate = 'Tarih Belirtilmedi';
+                if (asset.timestamp) {
+                    const dateObj = new Date(asset.timestamp);
+                    displayDate = dateObj.toLocaleDateString('tr-TR') + ' - ' + dateObj.toLocaleTimeString('tr-TR');
+                }
+
+                const cardHTML = `
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="asset-name">📦 ${asset.name || 'İsimsiz Asset'}</span>
+                            <span class="asset-type">${asset.type || 'Bilinmiyor'}</span>
+                        </div>
+                        <div class="asset-location">📂 <strong>Konum:</strong> ${asset.parent || 'Workspace'}</div>
+                        
+                        <div class="ai-analysis">
+                            <strong style="color: #4CAF50;">🤖 Gemini 3.5 Flash Yorumu:</strong><br><br>
+                            ${asset.ai_summary || '✨ Yapay zeka şu an analizi hazırlıyor, sayfayı yenilemenize gerek yok...'}
+                        </div>
+                        
+                        <div class="date">🕒 Sızdırılma Zamanı: ${displayDate}</div>
+                    </div>
+                `;
+                container.insertAdjacentHTML('afterbegin', cardHTML); 
+            }
+        });
+    </script>
+</body>
+</html>

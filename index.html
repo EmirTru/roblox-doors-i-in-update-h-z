@@ -6,7 +6,7 @@
     <title>Doors Sızıntıları - Serverless AI Tracker</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, sans-serif; }
-        body { background-color: #121212; color: #e0e0e0; padding: 20px; }
+        body { background-color: #121212; color: #e0e0e0; padding: 20px; padding-bottom: 200px; }
         header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #1f1f1f; }
         header h1 { color: #ff4a4a; font-size: 26pt; margin-bottom: 5px; }
         header p { color: #888; font-size: 11pt; }
@@ -19,6 +19,27 @@
         .ai-analysis { background-color: #151515; padding: 15px; border-radius: 6px; border: 1px solid #2a2a2a; line-height: 1.6; color: #dcdcdc; }
         .date { font-size: 10pt; color: #666; text-align: right; margin-top: 12px; font-weight: bold; }
         .no-data { text-align: center; color: #666; margin-top: 20px; font-style: italic; }
+        
+        /* 🛠️ SİTE İÇİ LOG PANELİ STİLLERİ */
+        #debug-console {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 160px;
+            background-color: #050505;
+            border-top: 3px solid #ffcc00;
+            color: #00ff00;
+            font-family: 'Courier New', Courier, monospace;
+            padding: 15px;
+            overflow-y: auto;
+            font-size: 10pt;
+            z-index: 9999;
+            box-shadow: 0 -5px 15px rgba(0,0,0,0.8);
+        }
+        .log-error { color: #ff4a4a; font-weight: bold; }
+        .log-success { color: #00ff00; }
+        .log-info { color: #00bfff; }
     </style>
 </head>
 <body>
@@ -34,96 +55,141 @@
         </div>
     </div>
 
+    <!-- 🛠️ Hataları ve Durumları Gösteren Canlı Konsol Kutusu -->
+    <div id="debug-console">
+        <div class="log-info">[Sistem]: Konsol başlatıldı. Hatalar burada görünecek...</div>
+    </div>
+
     <!-- Firebase v9 Modüler SDK Bağlantıları -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
         import { getDatabase, ref, onValue, update } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
 
+        // Ekrana hata bastırma fonksiyonu
+        function logToScreen(message, type = "info") {
+            const consoleDiv = document.getElementById("debug-console");
+            const time = new Date().toLocaleTimeString();
+            let className = "log-info";
+            if (type === "error") className = "log-error";
+            if (type === "success") className = "log-success";
+            
+            consoleDiv.innerHTML += `<div class="${className}">[${time}] ${message}</div>`;
+            consoleDiv.scrollTop = consoleDiv.scrollHeight; // Otomatik aşağı kaydır
+        }
+
+        // Pencere üzerindeki tüm genel javascript hatalarını yakala
+        window.onerror = function(msg, url, line) {
+            logToScreen(`Genel Kod Hatası: ${msg} (Satır: ${line})`, "error");
+            return false;
+        };
+
         // ⚠️ Buraya Kendi Güncel Gemini API Anahtarını Yazmalısın!
         const GEMINI_API_KEY = "YENI_ALACAGIN_GEMINI_API_KEY";
         
-        // Senin Gönderdiğin Firebase Bilgilerin Entegre Edildi 🛠️
         const firebaseConfig = {
             apiKey: "AIzaSyBIK0LHEqw6gEi6fwWER4i6HK9Aoxr4ECk",
             authDomain: "emirinsta.firebaseapp.com",
-            databaseURL: "https://emirinsta-default-rtdb.firebaseio.com", // Otomatik eşleşen RTDB adresi
+            databaseURL: "https://emirinsta-default-rtdb.firebaseio.com",
             projectId: "emirinsta",
             storageBucket: "emirinsta.firebasestorage.app",
             messagingSenderId: "1054133758624",
             appId: "1:1054133758624:web:a7ec89a1e9cf350aafb7c5"
         };
 
-        const app = initializeApp(firebaseConfig);
-        const database = getDatabase(app);
-        const assetRef = ref(database, 'doors_assets');
+        try {
+            logToScreen("Firebase başlatılıyor...", "info");
+            const app = initializeApp(firebaseConfig);
+            const database = getDatabase(app);
+            const assetRef = ref(database, 'doors_assets');
+            logToScreen("Firebase SDK başarıyla yüklendi. Veritabanı dinleniyor...", "success");
 
-        // Gemini 3.5 Flash ile Analiz Yapıp Firebase'e Geri Yazan Fonksiyon
-        async function askGemini(assetId, assetData) {
-            const prompt = `Roblox Doors oyununa yeni bir asset eklenmiş. Adı: ${assetData.name}, Türü: ${assetData.type}, Konumu: ${assetData.parent}. Bu bilgilere göre bu assetin oyuna nasıl bir yenilik getireceğini tahmin et ve heyecan verici Türkçe kısa bir sızıntı notu yaz.`;
+            // Gemini 3.5 Flash ile Analiz Yapıp Firebase'e Geri Yazan Fonksiyon
+            async function askGemini(assetId, assetData) {
+                logToScreen(`Gemini analizi talep ediliyor: ${assetData.name}`, "info");
+                const prompt = `Roblox Doors oyununa yeni bir asset eklenmiş. Adı: ${assetData.name}, Türü: ${assetData.type}, Konumu: ${assetData.parent}. Bu bilgilere göre bu assetin oyuna nasıl bir yenilik getireceğini tahmin et ve heyecan verici Türkçe kısa bir sızıntı notu yaz.`;
 
-            try {
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-                });
-                const resData = await response.json();
-                if (resData.candidates && resData.candidates[0].content.parts[0].text) {
-                    const aiText = resData.candidates[0].content.parts[0].text;
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                    });
+                    const resData = await response.json();
                     
-                    // Firebase'e geri güncelleme gönder
-                    const singleAssetRef = ref(database, 'doors_assets/' + assetId);
-                    update(singleAssetRef, { ai_summary: aiText });
+                    if (resData.error) {
+                        logToScreen(`Gemini API Hatası: ${resData.error.message}`, "error");
+                        return;
+                    }
+
+                    if (resData.candidates && resData.candidates[0].content.parts[0].text) {
+                        const aiText = resData.candidates[0].content.parts[0].text;
+                        logToScreen(`Gemini analizi başarılı. Veritabanına kaydediliyor...`, "success");
+                        
+                        const singleAssetRef = ref(database, 'doors_assets/' + assetId);
+                        update(singleAssetRef, { ai_summary: aiText });
+                    }
+                } catch (error) {
+                    logToScreen(`Gemini Bağlantı Hatası: ${error.message}`, "error");
                 }
-            } catch (error) {
-                console.error("Gemini Hatası:", error);
             }
-        }
-        
-        // Veritabanını Anlık Dinleme
-        onValue(assetRef, (snapshot) => {
-            const container = document.getElementById('leak-container');
-            container.innerHTML = ""; 
             
-            const data = snapshot.val();
-            if (!data) {
-                container.innerHTML = '<p class="no-data">Henüz veri yok. Delta ile oyunda scripti çalıştırın! 🎮</p>';
-                return;
-            }
-
-            for (let id in data) {
-                const asset = data[id];
+            // Veritabanını Anlık Dinleme
+            onValue(assetRef, (snapshot) => {
+                logToScreen("Firebase'den anlık veri tetiklendi!", "info");
+                const container = document.getElementById('leak-container');
+                container.innerHTML = ""; 
                 
-                // Eğer bu asset yeni gelmişse ve AI yorumu yoksa tetikle
-                if (!asset.ai_summary) {
-                    askGemini(id, asset);
+                const data = snapshot.val();
+                if (!data) {
+                    logToScreen("Firebase boş döndü: 'doors_assets' düğümünde henüz hiç veri yok.", "error");
+                    container.innerHTML = '<p class="no-data">Henüz veri yok. Delta ile oyunda scripti çalıştırın! 🎮</p>';
+                    return;
                 }
 
-                let displayDate = 'Tarih Belirtilmedi';
-                if (asset.timestamp) {
-                    const dateObj = new Date(asset.timestamp);
-                    displayDate = dateObj.toLocaleDateString('tr-TR') + ' - ' + dateObj.toLocaleTimeString('tr-TR');
-                }
+                logToScreen(`Veritabanında ${Object.keys(data).length} adet asset bulundu. Listeleniyor...`, "success");
 
-                const cardHTML = `
-                    <div class="card">
-                        <div class="card-header">
-                            <span class="asset-name">📦 ${asset.name || 'İsimsiz Asset'}</span>
-                            <span class="asset-type">${asset.type || 'Bilinmiyor'}</span>
+                for (let id in data) {
+                    const asset = data[id];
+                    
+                    if (!asset.ai_summary) {
+                        if(GEMINI_API_KEY === "YENI_ALACAGIN_GEMINI_API_KEY") {
+                            logToScreen(`Hata: Gemini API anahtarı girilmediği için ${asset.name} analiz edilemiyor!`, "error");
+                        } else {
+                            askGemini(id, asset);
+                        }
+                    }
+
+                    let displayDate = 'Tarih Belirtilmedi';
+                    if (asset.timestamp) {
+                        const dateObj = new Date(asset.timestamp);
+                        displayDate = dateObj.toLocaleDateString('tr-TR') + ' - ' + dateObj.toLocaleTimeString('tr-TR');
+                    }
+
+                    const cardHTML = `
+                        <div class="card">
+                            <div class="card-header">
+                                <span class="asset-name">📦 ${asset.name || 'İsimsiz Asset'}</span>
+                                <span class="asset-type">${asset.type || 'Bilinmiyor'}</span>
+                            </div>
+                            <div class="asset-location">📂 <strong>Konum:</strong> ${asset.parent || 'Workspace'} | <strong>ID:</strong> ${id}</div>
+                            
+                            <div class="ai-analysis">
+                                <strong style="color: #4CAF50;">🤖 Gemini 3.5 Flash Yorumu:</strong><br><br>
+                                ${asset.ai_summary || '✨ Yapay zeka şu an analizi hazırlıyor, sayfayı yenilemenize gerek yok...'}
+                            </div>
+                            
+                            <div class="date">🕒 Sızdırılma Zamanı: ${displayDate}</div>
                         </div>
-                        <div class="asset-location">📂 <strong>Konum:</strong> ${asset.parent || 'Workspace'} | <strong>ID:</strong> ${id}</div>
-                        
-                        <div class="ai-analysis">
-                            <strong style="color: #4CAF50;">🤖 Gemini 3.5 Flash Yorumu:</strong><br><br>
-                            ${asset.ai_summary || '✨ Yapay zeka şu an analizi hazırlıyor, sayfayı yenilemenize gerek yok...'}
-                        </div>
-                        
-                        <div class="date">🕒 Sızdırılma Zamanı: ${displayDate}</div>
-                    </div>
-                `;
-                container.insertAdjacentHTML('afterbegin', cardHTML); 
-            }
-        });
+                    `;
+                    container.insertAdjacentHTML('afterbegin', cardHTML); 
+                }
+            }, (error) => {
+                logToScreen(`Firebase Erişim/Yetki Hatası: ${error.message} (Lütfen Database kurallarını read:true, write:true yapın!)`, "error");
+            });
+
+        } catch (e) {
+            logToScreen(`Başlatma Hatası: ${e.message}`, "error");
+        }
     </script>
 </body>
 </html>

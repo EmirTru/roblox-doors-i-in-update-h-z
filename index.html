@@ -34,27 +34,28 @@
         </div>
     </div>
 
-    <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <!-- Firebase v9 Modüler SDK Bağlantıları -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
+        import { getDatabase, ref, onValue, update } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
 
-    <script>
-        // ⚠️ KENDİ GÜNCEL GÜVENLİ ANAHTARLARINI BURAYA YAZ
+        // ⚠️ Buraya Kendi Güncel Gemini API Anahtarını Yazmalısın!
         const GEMINI_API_KEY = "YENI_ALACAGIN_GEMINI_API_KEY";
         
+        // Senin Gönderdiğin Firebase Bilgilerin Entegre Edildi 🛠️
         const firebaseConfig = {
-            apiKey: "YENI_ALACAGIN_FIREBASE_API_KEY",
-            authDomain: "PROJENIN_ADI.firebaseapp.com",
-            databaseURL: "https://PROJENIN_ADI-default-rtdb.firebaseio.com",
-            projectId: "PROJENIN_ADI",
-            storageBucket: "PROJENIN_ADI.appspot.com",
-            messagingSenderId: "SENDER_ID",
-            appId: "APP_ID"
+            apiKey: "AIzaSyBIK0LHEqw6gEi6fwWER4i6HK9Aoxr4ECk",
+            authDomain: "emirinsta.firebaseapp.com",
+            databaseURL: "https://emirinsta-default-rtdb.firebaseio.com", // Otomatik eşleşen RTDB adresi
+            projectId: "emirinsta",
+            storageBucket: "emirinsta.firebasestorage.app",
+            messagingSenderId: "1054133758624",
+            appId: "1:1054133758624:web:a7ec89a1e9cf350aafb7c5"
         };
 
-        firebase.initializeApp(firebaseConfig);
-        const database = firebase.database();
-        const assetRef = database.ref('doors_assets');
+        const app = initializeApp(firebaseConfig);
+        const database = getDatabase(app);
+        const assetRef = ref(database, 'doors_assets');
 
         // Gemini 3.5 Flash ile Analiz Yapıp Firebase'e Geri Yazan Fonksiyon
         async function askGemini(assetId, assetData) {
@@ -67,17 +68,20 @@
                     body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
                 });
                 const resData = await response.json();
-                const aiText = resData.candidates[0].content.parts[0].text;
-                
-                // Analizi Firebase'e kaydet ki her seferinde tekrar sormasın
-                database.ref('doors_assets/' + assetId).update({ ai_summary: aiText });
+                if (resData.candidates && resData.candidates[0].content.parts[0].text) {
+                    const aiText = resData.candidates[0].content.parts[0].text;
+                    
+                    // Firebase'e geri güncelleme gönder
+                    const singleAssetRef = ref(database, 'doors_assets/' + assetId);
+                    update(singleAssetRef, { ai_summary: aiText });
+                }
             } catch (error) {
                 console.error("Gemini Hatası:", error);
             }
         }
         
         // Veritabanını Anlık Dinleme
-        assetRef.on('value', (snapshot) => {
+        onValue(assetRef, (snapshot) => {
             const container = document.getElementById('leak-container');
             container.innerHTML = ""; 
             
@@ -107,7 +111,7 @@
                             <span class="asset-name">📦 ${asset.name || 'İsimsiz Asset'}</span>
                             <span class="asset-type">${asset.type || 'Bilinmiyor'}</span>
                         </div>
-                        <div class="asset-location">📂 <strong>Konum:</strong> ${asset.parent || 'Workspace'}</div>
+                        <div class="asset-location">📂 <strong>Konum:</strong> ${asset.parent || 'Workspace'} | <strong>ID:</strong> ${id}</div>
                         
                         <div class="ai-analysis">
                             <strong style="color: #4CAF50;">🤖 Gemini 3.5 Flash Yorumu:</strong><br><br>
